@@ -1,132 +1,256 @@
-CIP SCHEDULING WITH CP-SAT
+# CIP Scheduling with CP-SAT
 
-A small scheduler for cleaning-in-place (CIP) jobs in a manufacturing plant.
-Given a fixed production plan, it decides WHEN each piece of equipment is
-cleaned, and WHICH cleaning resource does it, so that equipment waits dirty
-for as little time as possible.
+A small **Cleaning-in-Place (CIP) scheduling tool** for a manufacturing plant.
 
-Built with Python, pandas, and Google OR-Tools CP-SAT.
+Given a fixed production plan, the scheduler decides **when each piece of equipment should be cleaned** and **which cleaning resource should perform the cleaning**, with the objective of minimizing equipment waiting time before cleaning.
+
+Built with **Python, Pandas, and Google OR-Tools CP-SAT**.
+
 All data is simulated.
 
-1. THE PROBLEM
+---
+
+## Contents
+
+1. [The Problem](#1-the-problem)
+2. [How It Works](#2-how-it-works)
+3. [Key Ideas](#3-key-ideas)
+4. [Run the Project](#4-run-the-project)
+5. [Output](#5-output)
+6. [Limitations](#6-limitations)
+7. [Possible Next Steps](#7-possible-next-steps)
+8. [Requirements](#8-requirements)
+9. [License](#9-license)
 
 ---
 
-* Production batches use equipment on a fixed timetable.
+## 1. The Problem
+
+The project addresses the scheduling of **Cleaning-in-Place (CIP)** operations in a manufacturing environment.
+
+The basic situation is:
+
+* Production batches use equipment according to a fixed timetable.
 * After each batch, the equipment must be cleaned.
-* Cleaning must start after production ends, and finish before the
-dirty-hold limit (DHT) runs out and before the equipment is used again.
-* Only certain cleaning resources can reach each piece of equipment.
-* A cleaning resource handles one cleaning at a time and needs a setup
-(flush) time afterwards.
+* Cleaning must start after production ends.
+* Cleaning must finish before the **Dirty Hold Time (DHT)** limit expires and before the equipment is used again.
+* Only certain cleaning resources can access each piece of equipment.
+* Each cleaning resource can handle only one cleaning operation at a time.
+* A cleaning resource also requires a **setup/flush time** after each cleaning.
 
-When several batches need the same resource at the same time, some have to
-wait. The scheduler finds the plan with the least total waiting.
+When several batches require the same cleaning resource at overlapping times, some cleaning operations may have to wait.
 
-1. HOW IT WORKS
-
----
-
-Step 1 - 01_create_data.py
-Builds the production plan and computes each batch’s cleaning window
-(earliest start, latest start, slack). Stops if any window is impossible.
-
-Step 2 - 02_cleaning_tasks.py
-Lists every possible (batch, cleaning resource) pair using the
-compatibility table.
-
-Step 3 - 03_scheduler.py
-CP-SAT model: one start time per batch, one resource per batch, no
-overlap on a resource (including setup), minimize total waiting.
-
-Step 4 - 04_validator.py
-Re-checks the result in plain pandas: one cleaning per batch, compatible
-resource, time window, DHT/next-use deadline, no overlap with setup.
-
-Step 5 - 05_report.py
-Writes cleaning_report.xlsx with the details listed in section 5.
-
-1. KEY IDEAS
+The scheduler finds a feasible assignment and timing that **minimizes total waiting time**.
 
 ---
 
-* Slack: the size of a batch’s allowed start window. Negative slack means
-the production plan itself is infeasible, which no scheduler can fix.
-* Waiting: the time between the equipment being ready and its cleaning
-starting.
-* Optional intervals: let the solver choose between resources; a cleaning
-only blocks the resource it is assigned to.
-* Setup time: modeled by making each interval longer than the cleaning
-itself, so the next job on that resource cannot start until the flush
-is done.
-* Independent validator: a separate script checks the solver’s answer with
-different logic, so modeling mistakes are caught.
-1. RUN IT
+## 2. How It Works
+
+The project is organized into five steps.
+
+### Step 1 — `01_create_data.py`
+
+Builds the production plan and calculates the cleaning window for each batch:
+
+* Earliest possible start
+* Latest possible start
+* Slack
+
+The script stops if any cleaning window is impossible.
+
+### Step 2 — `02_cleaning_tasks.py`
+
+Generates all possible **(batch, cleaning resource)** combinations based on the equipment-resource compatibility table.
+
+### Step 3 — `03_scheduler.py`
+
+Builds and solves the **CP-SAT optimization model**.
+
+The model determines:
+
+* One cleaning start time for each batch
+* One compatible cleaning resource for each batch
+* No overlap between jobs assigned to the same resource
+* Setup/flush time after each cleaning
+* Minimum total waiting time
+
+### Step 4 — `04_validator.py`
+
+Independently checks the scheduler's solution using plain Pandas.
+
+The validator checks:
+
+* Every batch has exactly one cleaning
+* The selected resource is compatible
+* Cleaning starts within the allowed time window
+* The DHT and next-use deadlines are respected
+* Cleaning and setup do not overlap with another job on the same resource
+
+### Step 5 — `05_report.py`
+
+Generates an Excel report:
+
+```text
+cleaning_report.xlsx
+```
+
+with detailed scheduling and resource-utilization information.
 
 ---
 
+## 3. Key Ideas
+
+### Slack
+
+**Slack** represents the size of a batch's allowed cleaning-start window.
+
+A negative slack means that the production plan itself is infeasible.
+
+In that case, no scheduler can produce a valid solution without changing the production plan or the cleaning constraints.
+
+### Waiting
+
+**Waiting** is the time between the equipment becoming ready for cleaning and the actual start of its cleaning operation.
+
+Reducing this waiting time is the main optimization objective.
+
+### Optional Intervals
+
+Optional intervals allow the CP-SAT solver to choose between compatible cleaning resources.
+
+A cleaning operation only occupies the resource to which it is assigned.
+
+### Setup Time
+
+Setup/flush time is included directly in the scheduling interval.
+
+Therefore, if a cleaning takes 30 minutes and the required setup time is 15 minutes, the resource remains occupied for:
+
+```text
+30 + 15 = 45 minutes
+```
+
+This prevents another cleaning from starting before the required flush is complete.
+
+### Independent Validation
+
+The validator uses logic separate from the optimization model.
+
+This provides an additional layer of verification and helps detect potential modeling or scheduling errors.
+
+---
+
+## 4. Run the Project
+
+Install the required packages:
+
+```bash
 pip install -r requirements.txt
+```
+
+Then run the scripts in order:
+
+```bash
 python 01_create_data.py
 python 02_cleaning_tasks.py
 python 03_scheduler.py
 python 04_validator.py
 python 05_report.py
+```
 
-NOTE: The scheduler, the validator
+### Important: Setup Time
 
-and the report use the setup time (SETUP_MIN). Keep the same value in every place it appears; otherwise
-the validator and report will not match the schedule.
+The scheduler, validator, and report all use the setup-time parameter:
 
-1. OUTPUT
+```text
+SETUP_MIN
+```
 
----
+Keep the same value everywhere it appears.
 
-cleaning_report.xlsx has these sheets:
-
-* Summary            : Total waiting, which batches wait, busiest resource,
-tightest batch
-* Waiting batches    : Each waiting batch, which cleaning blocked it, and
-the reason
-* Resource workload: Cleaning, setup, busy and idle minutes per resource,
-and job order
-* Resource timeline: Each cleaning in sequence with the idle gap before it
-* Equipment          : Cleanings, waiting, and tightest slack per equipment
-* All batches        : Everything per batch, with waiting rows highlighted
-* Definitions        : Waiting, slack, busy, idle, and other terms explained
-
-A sample is in sample_output/.
-
-Example (simulated data, setup 15 min):
-With 4 batches, 3 equipment units and 2 cleaning resources, one batch
-(B004) waits 15 minutes. Its only compatible resource is still flushing
-after a previous cleaning, even though that resource is idle for most of
-the day. This shows why idle time alone does not tell you whether anyone
-waits.
-
-1. LIMITATIONS
+If different values are used, the validator and report may no longer match the generated schedule.
 
 ---
 
-* Clean-hold time (CHT) is not modeled yet.
-* Setup time depends on the resource only, not on the sequence of products.
-* The plant is small and simulated (4 batches, 3 equipment, 2 resources).
-* Maintenance scheduling is not modeled (possible extension).
-1. POSSIBLE NEXT STEPS
+## 5. Output
+
+The `cleaning_report.xlsx` workbook contains several sheets.
+
+| Sheet                 | Description                                                               |
+| --------------------- | ------------------------------------------------------------------------- |
+| **Summary**           | Total waiting, waiting batches, busiest resource, and tightest batch      |
+| **Waiting batches**   | Waiting batches, blocking cleaning, and reason for waiting                |
+| **Resource workload** | Cleaning, setup, busy, and idle minutes per resource, including job order |
+| **Resource timeline** | Cleaning operations in sequence and the idle gap before each job          |
+| **Equipment**         | Cleanings, waiting time, and tightest slack by equipment                  |
+| **All batches**       | Complete batch-level scheduling information                               |
+| **Definitions**       | Explanations of waiting, slack, busy, idle, and other terms               |
+
+Waiting batches are highlighted in the report to make scheduling conflicts easier to identify.
+
+### Example
+
+A sample output is provided in:
+
+```text
+sample_output/
+```
+
+For example, with **4 batches, 3 equipment units, and 2 cleaning resources**, using a **15-minute setup time**, one batch (`B004`) waits for 15 minutes.
+
+Its only compatible resource is still performing the required flush after a previous cleaning, even though that resource is idle for most of the day.
+
+This illustrates an important scheduling principle:
+
+> **Overall resource idle time does not necessarily mean that no batch has to wait.**
+
+A resource can be idle for long periods while still causing waiting at a specific point in the schedule because of its availability and compatibility constraints.
 
 ---
 
-* Model CHT as a soft rule with a penalty for re-cleaning.
-* Add frozen (already fixed) cleanings.
-* Add what-if scenarios (late production, resource outage) to test whether
-a plan can change.
-1. REQUIREMENTS
+## 6. Limitations
+
+The current model has several simplifying assumptions:
+
+* **Clean Hold Time (CHT)** is not modeled yet.
+* Setup time depends only on the cleaning resource and not on the sequence of products.
+* The plant is small and uses simulated data:
+
+  * 4 batches
+  * 3 equipment units
+  * 2 cleaning resources
+* Maintenance scheduling is not currently modeled.
 
 ---
 
-Python 3.9+, pandas, ortools, openpyxl (see requirements.txt).
+## 7. Possible Next Steps
 
-1. LICENSE
+Potential extensions include:
+
+* Model **CHT** as a soft constraint with a penalty for re-cleaning.
+* Add **frozen cleaning operations** that are already fixed in the schedule.
+* Add **what-if scenarios**, such as:
+
+  * Production delays
+  * Cleaning-resource outages
+  * Changes in DHT
+  * Changes in setup time
+* Extend the model to larger production plans and additional cleaning resources.
+* Add maintenance constraints and resource availability windows.
 
 ---
 
-MIT
+## 8. Requirements
+
+* Python 3.9+
+* Pandas
+* Google OR-Tools
+* OpenPyXL
+
+See `requirements.txt` for the required packages.
+
+---
+
+## 9. License
+
+This project is licensed under the **MIT License**.
