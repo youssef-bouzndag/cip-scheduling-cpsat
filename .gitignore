@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+
+.venv/
+venv/
+
+~$*.xlsx
+cleaning_report.xlsx
